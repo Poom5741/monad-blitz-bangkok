@@ -20,7 +20,74 @@ monad-pos/
 └─ scripts/                  # optional helpers (e.g., faucet)
 ```
 
-## Quickstart
+## Setup
+
+### 1. Deploy the USDCClone Contract
+
+First, navigate to the contracts directory and build the project:
+
+```bash
+cd monad-pos/contracts
+forge build
+```
+
+Start a local blockchain (in a separate terminal):
+
+```bash
+anvil
+```
+
+Deploy the USDCClone contract:
+
+```bash
+forge script script/Deploy.s.sol --rpc-url http://localhost:8545 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 --broadcast
+```
+
+**Note:** The private key above is the default Anvil account #0. For production, use your own private key.
+
+### 2. Extract the Contract Address
+
+After deployment, look for the contract address in the console output:
+
+```
+USDCClone deployed at: 0x5FbDB2315678afecb367f032d93F642f64180aa3
+```
+
+Copy this address for the next step.
+
+### 3. Configure Environment Variables
+
+Navigate to the app directory and copy the environment template:
+
+```bash
+cd ../app
+cp .env.example .env.local
+```
+
+Edit `.env.local` and set the following variables:
+
+```env
+NEXT_PUBLIC_MONAD_RPC_WSS=ws://localhost:8545
+NEXT_PUBLIC_MONAD_RPC_HTTPS=http://localhost:8545
+NEXT_PUBLIC_CHAIN_ID=31337
+NEXT_PUBLIC_USDC_ADDRESS=0x5FbDB2315678afecb367f032d93F642f64180aa3
+NEXT_PUBLIC_TOKEN_NAME=USDC Clone
+```
+
+Replace `NEXT_PUBLIC_USDC_ADDRESS` with the actual deployed contract address from step 2.
+
+### 4. Start the Application
+
+Install dependencies and start the development server:
+
+```bash
+npm install
+npm run dev
+```
+
+The application will be available at `http://localhost:3000`.
+
+## Quickstart (Alternative)
 
 1) Contracts
 - Build/tests: `cd monad-pos/contracts && forge build && forge test`

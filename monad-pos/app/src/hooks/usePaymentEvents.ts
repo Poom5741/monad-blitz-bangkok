@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { parseAbiItem, type Address, type Hex, getAddress } from 'viem';
-import { getPublicClientWs } from '@/lib/chain';
+import { getWsClient } from '@/lib/ws';
 
 const transferEvent = parseAbiItem('event Transfer(address indexed from, address indexed to, uint256 value)');
 
@@ -38,7 +38,7 @@ export function usePaymentEvents({ tokenAddress, merchant, value, until }: Payme
   };
 
   useEffect(() => {
-    const client = getPublicClientWs();
+    const client = getWsClient();
 
     (async () => {
       // Cleanup any prior watcher
