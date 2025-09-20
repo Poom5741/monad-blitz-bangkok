@@ -16,6 +16,7 @@ import { randomNonceBytes32 } from "@/lib/hex";
 import { getAddress, isAddress } from "viem";
 import { USDCCloneAbi } from "@/lib/abi/USDCClone";
 import { sendGasless } from "@/lib/tx";
+import { useTokenConfigCheck } from "@/hooks/useTokenConfigCheck";
 
 type PaymentStep = "connect" | "authorize" | "send" | "success" | "error";
 
@@ -30,6 +31,7 @@ export default function PayPage() {
   const params = useSearchParams();
   const user = useAddress();
   const token = getUsdcAddress();
+  const tokenCheck = useTokenConfigCheck();
 
   const [txHash, setTxHash] = useState("");
   const [paymentStep, setPaymentStep] = useState<PaymentStep>("connect");
@@ -174,6 +176,15 @@ export default function PayPage() {
             <Alert className="rounded-2xl border-destructive/50 bg-destructive/10">
               <AlertTriangle className="h-4 w-4 text-destructive" />
               <AlertDescription className="text-destructive">Network error, please try again.</AlertDescription>
+            </Alert>
+          )}
+
+          {(tokenCheck.nameMismatch || tokenCheck.decimalsMismatch) && (
+            <Alert className="rounded-2xl border-yellow-500/50 bg-yellow-500/10">
+              <AlertTriangle className="h-4 w-4 text-yellow-500" />
+              <AlertDescription className="text-yellow-500">
+                Signature domain mismatch; check TOKEN_NAME/decimals
+              </AlertDescription>
             </Alert>
           )}
 

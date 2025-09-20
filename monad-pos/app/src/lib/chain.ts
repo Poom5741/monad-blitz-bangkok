@@ -1,4 +1,4 @@
-import { createPublicClient, webSocket } from 'viem';
+import { createPublicClient, webSocket, http } from 'viem';
 
 type Hex = `0x${string}`;
 
@@ -34,4 +34,9 @@ export function getUsdcAddress(): Hex {
 
 export function getTokenName(): string {
   return envString('NEXT_PUBLIC_TOKEN_NAME');
+}
+
+export function getHttpClient() {
+  const url = envString('NEXT_PUBLIC_MONAD_RPC_HTTPS');
+  return createPublicClient({ transport: http(url) });
 }
