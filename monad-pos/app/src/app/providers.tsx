@@ -8,6 +8,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
   const clientId = process.env.NEXT_PUBLIC_THIRDWEB_CLIENT_ID;
   const paymasterUrl = process.env.NEXT_PUBLIC_THIRDWEB_PAYMASTER_URL;
 
+  // Enable gasless via paymaster if configured
   const sdkOptions = paymasterUrl
     ? { gasless: { openzeppelin: { relayerUrl: paymasterUrl } } }
     : undefined;
@@ -18,4 +19,3 @@ export default function Providers({ children }: { children: React.ReactNode }) {
     </ThirdwebProvider>
   );
 }
-

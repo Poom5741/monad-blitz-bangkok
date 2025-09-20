@@ -12,8 +12,9 @@ import { useAddress, ConnectWallet } from "@thirdweb-dev/react";
 import { getUsdcAddress } from "@/lib/chain";
 import { buildTransferWithAuthTypedData } from "@/lib/eip3009";
 import { randomNonceBytes32 } from "@/lib/hex";
-import { createWalletClient, custom, encodeFunctionData, getAddress, isAddress } from "viem";
+import { getAddress, isAddress } from "viem";
 import { USDCCloneAbi } from "@/lib/abi/USDCClone";
+import { useSendContract } from "@/lib/tx";
 
 type PaymentStep = "connect" | "authorize" | "send" | "success" | "error";
 
@@ -28,6 +29,7 @@ export default function PayPage() {
   const params = useSearchParams();
   const user = useAddress();
   const token = getUsdcAddress();
+  const sendContract = useSendContract();
 
   const [txHash, setTxHash] = useState("");
   const [paymentStep, setPaymentStep] = useState<PaymentStep>("connect");
@@ -100,10 +102,11 @@ export default function PayPage() {
 
       setPaymentStep('send');
 
-      const data = encodeFunctionData({
-        abi: USDCCloneAbi,
-        functionName: 'transferWithAuthorization',
-        args: [
+      const hash = await sendContract(
+        token,
+        USDCCloneAbi as any,
+        'transferWithAuthorization',
+        [
           user as `0x${string}`,
           parsed.to as `0x${string}`,
           parsed.value,
@@ -114,12 +117,8 @@ export default function PayPage() {
           r,
           s,
         ],
-      });
-
-      // For gasless, a proper setup would submit via thirdweb Smart Wallet + Paymaster.
-      // Here we submit via the connected EOA; if a paymaster URL is present, this can be swapped later.
-      const wc = createWalletClient({ transport: custom((window as any).ethereum) });
-      const hash = await wc.sendTransaction({ to: token, account: user as `0x${string}`, data });
+        user as `0x${string}`
+      );
       setTxHash(hash);
       setPaymentStep('success');
     } catch (e: any) {
