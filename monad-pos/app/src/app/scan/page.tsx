@@ -176,7 +176,7 @@ export default function ScanPage() {
 
             {isScanning && (
               <>
-                <video ref={videoRef} className="w-full h-full object-cover" playsInline muted />
+                <video ref={videoRef} className="w-full h-full object-cover" playsInline muted autoPlay />
                 <canvas ref={canvasRef} className="hidden" />
 
                 {/* Scanning overlay */}

@@ -1,78 +1,160 @@
-"use client";
+import { useEffect, useRef, useState } from "react";
+import { getPublicClient } from "@/lib/ws";
+import { parseAbiItem, toHex, checksumAddress, type Address, type Hex } from "viem";
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { parseAbiItem, type Address, type Hex, getAddress } from 'viem';
-import { getWsClient } from '@/lib/ws';
+const TRANSFER_EVENT = parseAbiItem(
+  "event Transfer(address indexed from, address indexed to, uint256 value)"
+);
 
-const transferEvent = parseAbiItem('event Transfer(address indexed from, address indexed to, uint256 value)');
-
-export type PaymentEventParams = {
+type Params = {
   tokenAddress: Address;
-  merchant: Address;
-  value: bigint; // expected value (6 decimals for USDCC)
-  until: number; // unix seconds; ignore events after this time
+  merchant: Address;         // must be checksummed
+  value: bigint;             // 6-decimal integer
+  until: number;             // unix seconds
+  // optional: search window in blocks
+  lookbackBlocks?: number;
+  pollMs?: number;
+  // Add option to disable polling for performance
+  enablePolling?: boolean;
 };
 
-export function usePaymentEvents({ tokenAddress, merchant, value, until }: PaymentEventParams) {
-  const [paidTxHash, setPaidTxHash] = useState<Hex | ''>('');
-  const [lastEvent, setLastEvent] = useState<{
-    from: Address;
-    to: Address;
-    value: bigint;
-    txHash: Hex;
-    blockNumber?: bigint;
-    logIndex?: number;
-  } | null>(null);
-  const unwatchRef = useRef<null | (() => void)>(null);
+export function usePaymentEvents({
+  tokenAddress,
+  merchant,
+  value,
+  until,
+  lookbackBlocks = 2000,
+  pollMs = 8000, // Increased default to reduce RPC load
+  enablePolling = true, // Allow disabling polling
+}: Params) {
+  const client = getPublicClient();
+  const [paidTxHash, setPaidTxHash] = useState<Hex | null>(null);
+  const [lastEvent, setLastEvent] = useState<any>(null);
+  const subRef = useRef<() => void>();
+  const lastCheckedBlock = useRef<bigint>(0n);
+  const normalizedTo = checksumAddress(merchant);
 
-  const normalized = useMemo(() => ({
-    token: getAddress(tokenAddress),
-    merchant: getAddress(merchant),
-    value: BigInt(value),
-    until,
-  }), [tokenAddress, merchant, value, until]);
+  // Helper: decide if a log matches this order
+  function matches(log: any) {
+    // args order: from, to, value
+    const to = checksumAddress(log.args?.to as Address);
+    const val = BigInt(log.args?.value ?? 0n);
+    const now = Math.floor(Date.now() / 1000);
+    return to === normalizedTo && val === value && now <= until;
+  }
 
-  const reset = () => {
-    setPaidTxHash('');
-    setLastEvent(null);
-  };
-
+  // Live subscription (WS)
   useEffect(() => {
-    const client = getWsClient();
-
+    if (!tokenAddress || !merchant || !value) return;
+    let unsub: (() => void) | undefined;
     (async () => {
-      // Cleanup any prior watcher
-      if (unwatchRef.current) { unwatchRef.current(); unwatchRef.current = null; }
-      unwatchRef.current = await client.watchContractEvent({
-        address: normalized.token,
-        event: transferEvent,
-        onLogs: (logs) => {
-          const now = Math.floor(Date.now() / 1000);
-          if (now > normalized.until) return;
-          for (const log of logs) {
-            const to = (log.args as any).to as Address;
-            const v = (log.args as any).value as bigint;
-            if (getAddress(to) === normalized.merchant && v === normalized.value) {
-              setPaidTxHash(log.transactionHash!);
-              setLastEvent({
-                from: (log.args as any).from as Address,
-                to,
-                value: v,
-                txHash: log.transactionHash!,
-                blockNumber: log.blockNumber,
-                logIndex: log.logIndex,
-              });
-              break;
+      try {
+        unsub = await client.watchEvent({
+          address: tokenAddress,
+          event: TRANSFER_EVENT,
+          args: { to: normalizedTo },
+          onLogs: (logs) => {
+            for (const log of logs) {
+              if (matches(log)) {
+                setPaidTxHash(log.transactionHash as Hex);
+                setLastEvent(log);
+              }
             }
-          }
-        },
-      });
+          },
+          onError: (e) => {
+            console.warn("[pos] watchEvent error", e);
+          },
+        });
+      } catch (e) {
+        console.warn("[pos] watchEvent setup failed; will rely on polling", e);
+      }
     })();
+    subRef.current = unsub;
+    return () => { try { unsub?.(); } catch {} };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tokenAddress, normalizedTo, value, until]);
+
+  // Catch-up polling (handles WS drops, cold start, missed logs)
+  useEffect(() => {
+    // Skip polling if disabled
+    if (!enablePolling) return;
+    
+    let timer: any;
+    let isActive = true;
+
+    // Initialize starting block asynchronously
+    const initializeStartBlock = async () => {
+      try {
+        const latest = await client.getBlockNumber();
+        if (lastCheckedBlock.current === 0n && isActive) {
+          lastCheckedBlock.current = latest > BigInt(lookbackBlocks)
+            ? latest - BigInt(lookbackBlocks)
+            : 0n;
+        }
+      } catch (e) {
+        console.warn("[pos] Failed to initialize start block", e);
+      }
+    };
+
+    // Non-blocking polling function
+    const tick = () => {
+      if (!isActive) return;
+      
+      // Use Promise.all to parallelize RPC calls and avoid blocking
+      Promise.all([
+        client.getBlockNumber().catch(() => lastCheckedBlock.current),
+        // Only fetch logs if we have a valid starting block
+        lastCheckedBlock.current > 0n ? client.getLogs({
+          address: tokenAddress,
+          event: TRANSFER_EVENT,
+          args: { to: normalizedTo },
+          fromBlock: lastCheckedBlock.current,
+          toBlock: 'latest',
+        }).catch(() => []) : Promise.resolve([])
+      ]).then(([latest, logs]) => {
+        if (!isActive) return;
+        
+        // Process any matching logs
+        for (const log of logs) {
+          if (matches(log)) {
+            setPaidTxHash(log.transactionHash as Hex);
+            setLastEvent(log);
+            return; // Found payment, stop processing
+          }
+        }
+        
+        // Update last checked block
+        if (typeof latest === 'bigint' && latest > lastCheckedBlock.current) {
+          lastCheckedBlock.current = latest + 1n;
+        }
+      }).catch((e) => {
+        console.warn("[pos] Polling error", e);
+      }).finally(() => {
+        if (isActive) {
+          timer = setTimeout(tick, pollMs);
+        }
+      });
+    };
+
+    // Start initialization and polling
+    initializeStartBlock().then(() => {
+      if (isActive) {
+        timer = setTimeout(tick, 2000); // Start polling after 2s to let WS establish
+      }
+    });
 
     return () => {
-      if (unwatchRef.current) { unwatchRef.current(); unwatchRef.current = null; }
+      isActive = false;
+      clearTimeout(timer);
     };
-  }, [normalized.token, normalized.merchant, normalized.value, normalized.until]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tokenAddress, normalizedTo, value, until, lookbackBlocks, pollMs, enablePolling]);
 
-  return { paidTxHash, lastEvent, reset } as const;
+  function reset() {
+    setPaidTxHash(null);
+    setLastEvent(null);
+    lastCheckedBlock.current = 0n;
+  }
+
+  return { paidTxHash, lastEvent, reset };
 }

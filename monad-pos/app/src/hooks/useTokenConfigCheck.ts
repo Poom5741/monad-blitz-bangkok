@@ -19,8 +19,8 @@ async function performCheck(): Promise<Result> {
     const client = getHttpClient();
     const addr = getUsdcAddress();
     const [name, decimals] = await Promise.all([
-      client.readContract({ address: addr, abi: USDCCloneAbi as any, functionName: 'name' }) as Promise<string>,
-      client.readContract({ address: addr, abi: USDCCloneAbi as any, functionName: 'decimals' }) as Promise<number>,
+      client.readContract({ address: addr, abi: USDCCloneAbi as any, functionName: 'name', args: [] }) as Promise<string>,
+      client.readContract({ address: addr, abi: USDCCloneAbi as any, functionName: 'decimals', args: [] }) as Promise<number>,
     ]);
     const expectedName = getTokenName();
     const nameMismatch = name !== expectedName;
@@ -45,4 +45,3 @@ export function useTokenConfigCheck() {
 
   return state;
 }
-

@@ -16,19 +16,19 @@ help:
 
 .PHONY: install
 install:
-	cd $(APP_DIR) && npm install
+	cd $(APP_DIR) && pnpm install
 
 .PHONY: dev
 dev:
-	npm run dev -w $(APP_DIR)
+	cd $(APP_DIR) && pnpm run dev
 
 .PHONY: build
 build:
-	npm run build -w $(APP_DIR)
+	cd $(APP_DIR) && pnpm run build
 
 .PHONY: start
 start:
-	npm run start -w $(APP_DIR)
+	cd $(APP_DIR) && pnpm run start
 
 .PHONY: env-setup
 env-setup:

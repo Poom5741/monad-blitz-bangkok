@@ -40,6 +40,16 @@ export const USDCCloneAbi = [
     outputs: [{ name: '', type: 'string' }],
   },
   {
+    type: 'function',
+    stateMutability: 'nonpayable',
+    name: 'transfer',
+    inputs: [
+      { name: 'to', type: 'address' },
+      { name: 'value', type: 'uint256' },
+    ],
+    outputs: [{ type: 'bool' }],
+  },
+  {
     type: 'event',
     name: 'Transfer',
     anonymous: false,
@@ -52,4 +62,3 @@ export const USDCCloneAbi = [
 ] as const satisfies Abi;
 
 export type { Abi };
-

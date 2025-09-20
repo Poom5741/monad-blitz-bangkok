@@ -9,14 +9,16 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Wallet, Check, AlertTriangle, Clock, Copy, ArrowLeft, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { useAddress, useChainId, useNetworkMismatch, useSwitchChain, ConnectWallet } from "@thirdweb-dev/react";
-import { getUsdcAddress, monadTestnet } from "@/lib/chain";
+import { ConnectButton, useActiveAccount } from "thirdweb/react";
+import { getUsdcAddress } from "@/lib/chain";
+import { getFeeTokenInfo } from "@/lib/fee";
 import { buildTransferWithAuthTypedData } from "@/lib/eip3009";
 import { randomNonceBytes32 } from "@/lib/hex";
 import { getAddress, isAddress } from "viem";
 import { USDCCloneAbi } from "@/lib/abi/USDCClone";
-import { sendGasless } from "@/lib/tx";
+import { callContractWrite, writeTransfer } from "@/lib/tx";
 import { useTokenConfigCheck } from "@/hooks/useTokenConfigCheck";
+import { featureEip3009 } from "@/lib/flags";
 
 type PaymentStep = "connect" | "authorize" | "send" | "success" | "error";
 
@@ -29,10 +31,8 @@ function mmss(left: number) {
 export default function PayPage() {
   const router = useRouter();
   const params = useSearchParams();
-  const user = useAddress();
-  const activeChainId = useChainId();
-  const isMismatch = useNetworkMismatch();
-  const switchChain = useSwitchChain();
+  const account = useActiveAccount();
+  const user = account?.address as `0x${string}` | undefined;
   const token = getUsdcAddress();
   const tokenCheck = useTokenConfigCheck();
 
@@ -40,10 +40,21 @@ export default function PayPage() {
   const [paymentStep, setPaymentStep] = useState<PaymentStep>("connect");
   const [error, setError] = useState<"expired" | "invalid" | "network" | null>(null);
   const [nowSec, setNowSec] = useState(() => Math.floor(Date.now() / 1000));
+  const [feeSymbol, setFeeSymbol] = useState<string>("USDC");
+  const [feeDecimals, setFeeDecimals] = useState<number>(6);
 
   useEffect(() => {
     const t = setInterval(() => setNowSec(Math.floor(Date.now() / 1000)), 1000);
     return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    getFeeTokenInfo()
+      .then((info) => {
+        if (info?.symbol) setFeeSymbol(info.symbol);
+        if (info?.decimals != null) setFeeDecimals(info.decimals);
+      })
+      .catch(() => {});
   }, []);
 
   const query = useMemo(() => {
@@ -80,13 +91,20 @@ export default function PayPage() {
   }, [parsed, expired]);
 
   async function handlePay() {
-    if (!user || !parsed.valid || expired) return;
-    // Enforce Monad Testnet only
-    if (activeChainId !== (monadTestnet as any).chainId) {
-      try { await (switchChain as any)?.((monadTestnet as any).chainId); } catch {}
-      return;
-    }
+    if (!user || !parsed.valid || expired || !account) return;
     try {
+      const useEip = featureEip3009();
+
+      if (!useEip) {
+        setPaymentStep('send');
+        const hash = await writeTransfer({ account: account as any, to: parsed.to as `0x${string}`, value: parsed.value });
+        setTxHash(hash);
+        toast.success('Payment submitted', { description: hash });
+        setPaymentStep('success');
+        return;
+      }
+
+      // EIP-3009 flow
       setPaymentStep('authorize');
       const typed = buildTransferWithAuthTypedData({
         from: user as `0x${string}`,
@@ -97,14 +115,11 @@ export default function PayPage() {
         nonce: randomNonceBytes32(),
       });
 
-      // Sign via EIP-712
-      // Prefer window.ethereum directly to avoid extra deps; Thirdweb connects the wallet.
       const signature: string = await (window as any).ethereum.request({
         method: 'eth_signTypedData_v4',
         params: [user, JSON.stringify(typed)],
       });
 
-      // split v,r,s
       const hex = signature.slice(2);
       const r = `0x${hex.slice(0, 64)}` as `0x${string}`;
       const s = `0x${hex.slice(64, 128)}` as `0x${string}`;
@@ -112,7 +127,7 @@ export default function PayPage() {
 
       setPaymentStep('send');
 
-      const hash = await sendGasless(
+      const hash = await callContractWrite(
         token,
         USDCCloneAbi as any,
         'transferWithAuthorization',
@@ -126,7 +141,8 @@ export default function PayPage() {
           v,
           r,
           s,
-        ]
+        ],
+        account as any
       );
       setTxHash(hash);
       toast.success('Payment submitted', { description: hash });
@@ -137,7 +153,14 @@ export default function PayPage() {
         setPaymentStep('connect');
         return;
       }
-      toast.error(e?.message || 'Network error');
+      const msg: string = e?.message || '';
+      if (/401/.test(msg) || /unauth/i.test(msg)) {
+        toast.error('thirdweb authorization failed (401)', {
+          description: 'Check NEXT_PUBLIC_THIRDWEB_CLIENT_ID, allowed domains, and Sponsorship Rules for this contract & chain.',
+        });
+      } else {
+        toast.error(msg || 'Network error');
+      }
       setError('network');
       setPaymentStep('error');
     }
@@ -210,6 +233,7 @@ export default function PayPage() {
                 </div>
                 <div className="mt-4 text-3xl font-bold">{displayAmount} USDC</div>
                 <div className="text-sm text-muted-foreground break-all mt-2">To: {parsed.to}</div>
+                <div className="text-sm text-muted-foreground mt-2">Fee: ~ in {feeSymbol} (sponsored)</div>
               </CardContent>
             </Card>
           )}
@@ -220,30 +244,20 @@ export default function PayPage() {
             </CardHeader>
             <CardContent className="p-6 pt-0">
               {!user ? (
-                <ConnectWallet theme="dark" btnTitle="Connect Wallet" modalTitle="Connect Wallet"/>
+                <ConnectButton client={{ autoConnect: true }} />
               ) : (
                 <div className="space-y-4">
-                  {activeChainId !== (monadTestnet as any).chainId && (
-                    <Alert className="rounded-2xl border-yellow-500/50 bg-yellow-500/10">
-                      <AlertTriangle className="h-4 w-4 text-yellow-500" />
-                      <AlertDescription className="text-yellow-500 flex items-center justify-between">
-                        Wrong network. Please switch to Monad Testnet.
-                        <Button size="sm" className="ml-3" onClick={() => (switchChain as any)?.((monadTestnet as any).chainId)}>
-                          Switch Network
-                        </Button>
-                      </AlertDescription>
-                    </Alert>
-                  )}
                   {paymentStep === 'connect' && (
                     <Button
                       size="lg"
                       className="w-full rounded-2xl shadow-lg h-14 text-lg"
                       onClick={handlePay}
-                      disabled={!!error || activeChainId !== (monadTestnet as any).chainId}
+                      disabled={!!error}
                     >
                       Pay {displayAmount} USDC
                     </Button>
                   )}
+                  <div className="text-xs text-muted-foreground text-center">Mode: {featureEip3009() ? 'EIP-3009 (gas-sponsored if available)' : 'Standard transfer'}</div>
 
                   {(paymentStep === 'authorize' || paymentStep === 'send') && (
                     <div className="space-y-4">

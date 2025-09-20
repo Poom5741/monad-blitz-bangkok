@@ -67,14 +67,35 @@ cp .env.example .env.local
 Edit `.env.local` and set the following variables:
 
 ```env
-NEXT_PUBLIC_MONAD_RPC_WSS=ws://localhost:8545
-NEXT_PUBLIC_MONAD_RPC_HTTPS=http://localhost:8545
-NEXT_PUBLIC_CHAIN_ID=31337
-NEXT_PUBLIC_USDC_ADDRESS=0x5FbDB2315678afecb367f032d93F642f64180aa3
-NEXT_PUBLIC_TOKEN_NAME=USDC Clone
+NEXT_PUBLIC_THIRDWEB_CLIENT_ID=your_client_id
+NEXT_PUBLIC_MONAD_CHAIN_ID=20143
+NEXT_PUBLIC_MONAD_RPC_HTTPS=https://rpc.testnet.monad.xyz
+NEXT_PUBLIC_MONAD_RPC_WSS=wss://rpc.testnet.monad.xyz/ws
+NEXT_PUBLIC_FEE_TOKEN_ADDRESS=0xYourUSDCClone
+NEXT_PUBLIC_FEE_TOKEN_DECIMALS=6
+NEXT_PUBLIC_TOKEN_NAME=USDCClone
 ```
 
-Replace `NEXT_PUBLIC_USDC_ADDRESS` with the actual deployed contract address from step 2.
+Set `NEXT_PUBLIC_FEE_TOKEN_ADDRESS` to the deployed USDCClone address.
+
+### Feature Flags
+
+- `NEXT_PUBLIC_FEATURE_EIP3009=0` → Plain ERC‑20 transfer (simplest fallback; no EIP‑712 signature step).
+- `NEXT_PUBLIC_FEATURE_EIP3009=1` → EIP‑3009 gasless‑style flow (`transferWithAuthorization`), compatible with thirdweb AA + Paymaster.
+
+Recommended env for Monad Testnet:
+
+```
+NEXT_PUBLIC_THIRDWEB_CLIENT_ID=your_client_id
+NEXT_PUBLIC_CHAIN_ID=10143
+NEXT_PUBLIC_MONAD_CHAIN_ID=10143
+NEXT_PUBLIC_MONAD_RPC_HTTPS=https://rpc.testnet.monad.xyz
+NEXT_PUBLIC_MONAD_RPC_WSS=wss://rpc.testnet.monad.xyz/ws
+NEXT_PUBLIC_FEE_TOKEN_ADDRESS=0xYourUSDCClone
+NEXT_PUBLIC_FEE_TOKEN_DECIMALS=6
+NEXT_PUBLIC_TOKEN_NAME=USDCClone
+NEXT_PUBLIC_FEATURE_EIP3009=0
+```
 
 ### 4. Start the Application
 
@@ -96,7 +117,7 @@ The application will be available at `http://localhost:3000`.
 
 2) App
 - Copy env: `cp monad-pos/app/.env.example monad-pos/app/.env.local`
-- Set required vars: `NEXT_PUBLIC_MONAD_RPC_WSS`, `NEXT_PUBLIC_MONAD_RPC_HTTPS`, `NEXT_PUBLIC_CHAIN_ID`, `NEXT_PUBLIC_USDC_ADDRESS`, `NEXT_PUBLIC_TOKEN_NAME`, and optionally `NEXT_PUBLIC_THIRDWEB_CLIENT_ID`, `NEXT_PUBLIC_THIRDWEB_PAYMASTER_URL` for gasless.
+- Set required vars: `NEXT_PUBLIC_THIRDWEB_CLIENT_ID`, `NEXT_PUBLIC_MONAD_CHAIN_ID`, `NEXT_PUBLIC_MONAD_RPC_HTTPS`, `NEXT_PUBLIC_MONAD_RPC_WSS`, `NEXT_PUBLIC_FEE_TOKEN_ADDRESS`, `NEXT_PUBLIC_FEE_TOKEN_DECIMALS`, `NEXT_PUBLIC_TOKEN_NAME`.
 - Run: `npm run dev -w monad-pos/app` (Next.js dev server)
 
 ## Flows

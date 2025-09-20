@@ -7,9 +7,12 @@ import Keypad from "@/components/Keypad";
 import QRCode from "react-qr-code";
 import { Check, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { useAddress, useChainId, useNetworkMismatch, useSwitchChain, ConnectWallet } from "@thirdweb-dev/react";
-import { usePaymentEvents } from "@/hooks/usePaymentEvents";
-import { getUsdcAddress, monadTestnet } from "@/lib/chain";
+import { ConnectButton, useActiveAccount } from "thirdweb/react";
+import { usePaymentEventsOptimized } from "@/hooks/usePaymentEventsOptimized";
+import { useWalletBalanceMonitor } from "@/hooks/useWalletBalanceMonitor";
+import { getUsdcAddress } from "@/lib/chain";
+import { checksumAddress, type Address } from "viem";
+import { createThirdwebClient } from "thirdweb";
 
 function mmss(unixLeft: number) {
   const m = Math.max(0, Math.floor(unixLeft / 60));
@@ -25,11 +28,10 @@ function genOrderId() {
 }
 
 export default function POSPage() {
-  const address = useAddress();
-  const activeChainId = useChainId();
-  const isMismatch = useNetworkMismatch();
-  const switchChain = useSwitchChain();
+  const account = useActiveAccount();
+  const address = account?.address;
   const tokenAddress = getUsdcAddress();
+  const client = createThirdwebClient({ clientId: process.env.NEXT_PUBLIC_THIRDWEB_CLIENT_ID! });
 
   const [amountStr, setAmountStr] = useState("");
   const [orderId, setOrderId] = useState("");
@@ -37,6 +39,7 @@ export default function POSPage() {
   const [qrUrl, setQrUrl] = useState("");
   const [paidTxHashView, setPaidTxHashView] = useState("");
   const [todayTotal, setTodayTotal] = useState<bigint>(0n);
+  const [initialBalance, setInitialBalance] = useState<bigint | undefined>(undefined);
   const [nowSec, setNowSec] = useState(() => Math.floor(Date.now() / 1000));
 
   // Update timer every second
@@ -49,18 +52,59 @@ export default function POSPage() {
   const isActive = !!qrUrl && !!expiresAt && nowSec <= (expiresAt || 0);
 
   // Start event listener regardless; it will ignore if expired/not active
-  const { paidTxHash, lastEvent, reset } = usePaymentEvents({
-    tokenAddress: tokenAddress,
-    merchant: (address || "0x0000000000000000000000000000000000000000") as `0x${string}`,
-    value: isActive ? micros : 0n,
-    until: expiresAt || 0,
+  const checksummedAddress = address ? checksumAddress(address as Address) : "0x0000000000000000000000000000000000000000" as Address;
+  const checksummedTokenAddress = checksumAddress(tokenAddress as Address);
+  
+  // Console diagnostics (temporary)
+  console.log("[pos] listen", { 
+    tokenAddress: checksummedTokenAddress, 
+    merchant: checksummedAddress, 
+    value: micros.toString(), 
+    until: expiresAt || 0 
   });
+  console.log("[pos] ws", process.env.NEXT_PUBLIC_MONAD_RPC_WSS);
+
+  const { events, isListening, error: hookError, reset } = usePaymentEventsOptimized({
+    tokenAddress: checksummedTokenAddress,
+    merchant: checksummedAddress,
+    value: isActive && micros > 0n ? micros : 0n,
+    until: expiresAt || 0,
+    // Optimized settings to prevent RPC blocking
+    pollMs: 8000, // Reduced frequency for non-blocking polling
+    enablePolling: isActive && !!address && micros > 0n, // Only enable when we have valid params
+    useOptimizedMode: true, // Enable non-blocking optimized mode
+  });
+
+  // Balance monitoring for direct wallet balance checking
+  const { 
+    isSuccess: balanceSuccess, 
+    balanceChange, 
+    currentBalance, 
+    error: balanceError,
+    isMonitoring,
+    reset: resetBalance 
+  } = useWalletBalanceMonitor({
+    walletAddress: checksummedAddress,
+    tokenAddress: checksummedTokenAddress,
+    expectedAmount: micros,
+    isActive: isActive && !!address && micros > 0n,
+    initialBalance: initialBalance,
+    pollInterval: 3000, // Check balance every 3 seconds
+  });
+
+  // Extract payment info from events (optimized hook returns events array)
+  const paidTxHash = events.length > 0 ? events[0].transactionHash : null;
+  const lastEvent = events.length > 0 ? events[0] : null;
+
+  // Check for payment success from either event detection or balance monitoring
+  const paymentReceived = paidTxHash || balanceSuccess;
 
   // On payment
   const playedRef = useRef(false);
   useEffect(() => {
-    if (paidTxHash) {
-      setPaidTxHashView(paidTxHash);
+    if (paymentReceived) {
+      const displayTxHash = paidTxHash || "balance-detected";
+      setPaidTxHashView(displayTxHash);
       // increment total
       setTodayTotal((t) => t + micros);
       // Notification popup instead of sound
@@ -69,8 +113,9 @@ export default function POSPage() {
         try {
           const tx = paidTxHash as string;
           const short = tx ? `${tx.slice(0, 6)}…${tx.slice(-4)}` : '';
+          const method = paidTxHash ? 'Transaction detected' : 'Balance increase detected';
           toast.success('Payment received', {
-            description: `${formatAmount6(micros)} USDC${short ? ` · ${short}` : ''}`,
+            description: `${formatAmount6(micros)} USDC${short ? ` · ${short}` : ''} · ${method}`,
           });
         } catch {}
       }
@@ -82,10 +127,11 @@ export default function POSPage() {
         setPaidTxHashView("");
         playedRef.current = false;
         reset();
+        resetBalance();
       }, 2000);
       return () => clearTimeout(to);
     }
-  }, [paidTxHash]);
+  }, [paymentReceived, paidTxHash, micros, reset, resetBalance]);
 
   const onInput = useCallback((ch: string) => {
     if (ch === 'backspace') {
@@ -107,9 +153,36 @@ export default function POSPage() {
 
   const onClear = useCallback(() => setAmountStr(""), []);
 
-  const handleCreateQr = () => {
+  const handleCreateQr = async () => {
     if (!address) return;
     if (micros <= 0n) return;
+    
+    // Capture initial balance before creating QR
+    try {
+      const { getOptimizedClient } = await import("@/lib/ws-optimized");
+      const client = getOptimizedClient();
+      
+      const balance = await client.readContract({
+        address: checksummedTokenAddress,
+        abi: [
+          {
+            name: "balanceOf",
+            type: "function",
+            stateMutability: "view",
+            inputs: [{ name: "account", type: "address" }],
+            outputs: [{ name: "", type: "uint256" }],
+          },
+        ],
+        functionName: "balanceOf",
+        args: [checksummedAddress],
+      });
+      
+      setInitialBalance(balance);
+    } catch (error) {
+      console.error("Failed to get initial balance:", error);
+      setInitialBalance(undefined);
+    }
+    
     const oid = genOrderId();
     const exp = Math.floor(Date.now() / 1000) + 5 * 60;
     const url = `/pay?to=${address}&a=${micros.toString()}&exp=${exp}&oid=${oid}`;
@@ -119,6 +192,7 @@ export default function POSPage() {
     setPaidTxHashView("");
     // reset listener state in case of previous run
     reset();
+    resetBalance();
   };
 
   const cancelQr = () => {
@@ -126,7 +200,9 @@ export default function POSPage() {
     setOrderId("");
     setExpiresAt(null);
     setPaidTxHashView("");
+    setInitialBalance(undefined);
     reset();
+    resetBalance();
   };
 
   const newAmount = () => {
@@ -152,20 +228,9 @@ export default function POSPage() {
           <div className="rounded-2xl shadow-lg mb-6 bg-zinc-900 border border-zinc-800 p-6">
             {!address ? (
               <div className="mb-4">
-                <ConnectWallet theme="dark" btnTitle="Connect Wallet" modalTitle="Connect Merchant Wallet"/>
+                <ConnectButton client={client} />
               </div>
-            ) : (
-              activeChainId !== (monadTestnet as any).chainId ? (
-                <div className="mb-4">
-                  <div className="rounded-xl p-3 bg-yellow-500/10 border border-yellow-500/50 flex items-center justify-between">
-                    <span className="text-sm text-yellow-500">Wrong network. Switch to Monad Testnet.</span>
-                    <button className="px-3 py-1 rounded-lg bg-yellow-500 text-black text-sm" onClick={() => (switchChain as any)?.((monadTestnet as any).chainId)}>
-                      Switch
-                    </button>
-                  </div>
-                </div>
-              ) : null
-            )}
+            ) : null}
             <h2 className="text-xl font-semibold mb-4 text-center">Enter Amount</h2>
             <AmountDisplay value={amountStr} onChange={setAmountStr} symbol="USDC" />
             <div className="mt-4">
@@ -174,7 +239,7 @@ export default function POSPage() {
             <button
               className="mt-5 w-full rounded-2xl h-14 text-lg font-semibold bg-emerald-500 text-black active:bg-emerald-400 disabled:opacity-50"
               onClick={handleCreateQr}
-              disabled={!address || micros <= 0n || activeChainId !== (monadTestnet as any).chainId}
+              disabled={!address || micros <= 0n}
             >
               Create QR
             </button>
@@ -217,10 +282,14 @@ export default function POSPage() {
         {qrUrl && (
           <div className="rounded-2xl shadow-lg bg-zinc-900 border border-zinc-800 p-6">
             <div className="flex items-center justify-center gap-3">
-              {!paidTxHash ? (
+              {!paymentReceived ? (
                 <>
                   <Loader2 className="w-5 h-5 animate-spin text-zinc-400" />
-                  <span className="text-zinc-400">Waiting for payment…</span>
+                  <span className="text-zinc-400">
+                    Waiting for payment… 
+                    {isMonitoring && " (monitoring balance)"}
+                    {isListening && " (listening for events)"}
+                  </span>
                 </>
               ) : (
                 <>
@@ -228,12 +297,24 @@ export default function POSPage() {
                     <Check className="w-3 h-3 text-white" />
                   </div>
                   <span className="text-green-500 font-semibold">Paid {formatAmount6(micros)} USDC</span>
-                  {paidTxHashView && (
+                  {paidTxHashView && paidTxHashView !== "balance-detected" && (
                     <code className="text-xs text-zinc-400 bg-zinc-800 border border-zinc-700 rounded px-2 py-0.5">{shortHash(paidTxHashView)}</code>
+                  )}
+                  {paidTxHashView === "balance-detected" && (
+                    <span className="text-xs text-zinc-400 bg-zinc-800 border border-zinc-700 rounded px-2 py-0.5">Balance detected</span>
                   )}
                 </>
               )}
             </div>
+            {(hookError || balanceError) && (
+              <div className="mt-3 text-center">
+                <span className="text-xs text-red-400">
+                  {hookError && `Event error: ${hookError}`}
+                  {hookError && balanceError && " | "}
+                  {balanceError && `Balance error: ${balanceError}`}
+                </span>
+              </div>
+            )}
           </div>
         )}
       </main>

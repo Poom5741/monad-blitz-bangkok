@@ -1,50 +1,33 @@
 "use client";
 
 import React from 'react';
-// v5 provider & UI
-import { ThirdwebProvider, ConnectButton } from 'thirdweb/react';
-import type { ThirdwebProviderProps } from 'thirdweb/react';
-// Keep legacy v4 provider to maintain existing pages using @thirdweb-dev/react
-import { ThirdwebProvider as ThirdwebProviderV4 } from '@thirdweb-dev/react';
-
+import { ThirdwebProvider } from 'thirdweb/react';
 import { monadTestnet } from '@/lib/chain';
 import { useTokenConfigCheck } from '@/hooks/useTokenConfigCheck';
 
 export default function Providers({ children }: { children: React.ReactNode }) {
-  const clientId = process.env.NEXT_PUBLIC_THIRDWEB_CLIENT_ID;
-  const paymasterUrl = process.env.NEXT_PUBLIC_THIRDWEB_PAYMASTER_URL;
-
-  // Legacy gasless for v4 SDK usage (if configured)
-  const sdkOptions = paymasterUrl
-    ? { gasless: { openzeppelin: { relayerUrl: paymasterUrl } } }
-    : undefined;
-
-  // Run token config guard on mount (console warnings on mismatch)
+  // Token config guard (logs to console on mismatch)
   useTokenConfigCheck();
 
-  const accountAbstraction: NonNullable<ThirdwebProviderProps['accountAbstraction']> = {
-    chain: monadTestnet as any,
-    sponsorGas: true,
-  };
-
-  const v4SupportedChains = [monadTestnet as any];
-  const v4ChainRpc = { [(monadTestnet as any).chainId]: (monadTestnet as any).rpc?.[0] } as Record<number, string>;
+  const feeToken = process.env.NEXT_PUBLIC_FEE_TOKEN_ADDRESS as `0x${string}` | undefined;
+  if (!feeToken || !/^0x[0-9a-fA-F]{40}$/.test(feeToken)) {
+    throw new Error('NEXT_PUBLIC_FEE_TOKEN_ADDRESS is not set or invalid');
+  }
 
   return (
-    <ThirdwebProvider clientId={clientId} activeChain={monadTestnet as any} accountAbstraction={accountAbstraction}>
-      <ThirdwebProviderV4
-        activeChain={monadTestnet as any}
-        desiredChainId={(monadTestnet as any).chainId}
-        supportedChains={v4SupportedChains as any}
-        chainRpc={v4ChainRpc}
-        clientId={clientId}
-        sdkOptions={sdkOptions}
-      >
-        {children}
-      </ThirdwebProviderV4>
+    <ThirdwebProvider
+      clientId={process.env.NEXT_PUBLIC_THIRDWEB_CLIENT_ID!}
+      activeChain={monadTestnet as any}
+      accountAbstraction={{
+        chain: monadTestnet as any,
+        sponsorGas: true,
+        paymaster: {
+          type: 'erc20',
+          tokenAddress: feeToken,
+        },
+      }}
+    >
+      {children}
     </ThirdwebProvider>
   );
 }
-
-// Re-export for convenience; ensures symbol is available app-wide.
-export { ConnectButton };

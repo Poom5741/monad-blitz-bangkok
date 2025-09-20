@@ -13,11 +13,11 @@ export type TransferWithAuthParams = {
 };
 
 const NEXT_PUBLIC_TOKEN_NAME = process.env.NEXT_PUBLIC_TOKEN_NAME || '';
-const NEXT_PUBLIC_CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID || '');
-const NEXT_PUBLIC_USDC_ADDRESS = (process.env.NEXT_PUBLIC_USDC_ADDRESS || '') as Addr;
+const NEXT_PUBLIC_CHAIN_ID = Number(process.env.NEXT_PUBLIC_MONAD_CHAIN_ID || process.env.NEXT_PUBLIC_CHAIN_ID || '');
+const NEXT_PUBLIC_USDC_ADDRESS = (process.env.NEXT_PUBLIC_USDC_ADDRESS || process.env.NEXT_PUBLIC_FEE_TOKEN_ADDRESS || '') as Addr;
 
 if (!NEXT_PUBLIC_TOKEN_NAME) throw new Error('NEXT_PUBLIC_TOKEN_NAME is not set');
-if (!NEXT_PUBLIC_CHAIN_ID) throw new Error('NEXT_PUBLIC_CHAIN_ID is not set');
+if (!NEXT_PUBLIC_CHAIN_ID) throw new Error('NEXT_PUBLIC_MONAD_CHAIN_ID is not set');
 if (!NEXT_PUBLIC_USDC_ADDRESS) throw new Error('NEXT_PUBLIC_USDC_ADDRESS is not set');
 
 function toBigIntish(x: bigint | number | string): string {
