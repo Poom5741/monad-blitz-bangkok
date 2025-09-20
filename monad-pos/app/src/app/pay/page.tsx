@@ -15,7 +15,7 @@ import { buildTransferWithAuthTypedData } from "@/lib/eip3009";
 import { randomNonceBytes32 } from "@/lib/hex";
 import { getAddress, isAddress } from "viem";
 import { USDCCloneAbi } from "@/lib/abi/USDCClone";
-import { useSendContract } from "@/lib/tx";
+import { sendGasless } from "@/lib/tx";
 
 type PaymentStep = "connect" | "authorize" | "send" | "success" | "error";
 
@@ -30,7 +30,6 @@ export default function PayPage() {
   const params = useSearchParams();
   const user = useAddress();
   const token = getUsdcAddress();
-  const sendContract = useSendContract();
 
   const [txHash, setTxHash] = useState("");
   const [paymentStep, setPaymentStep] = useState<PaymentStep>("connect");
@@ -103,7 +102,7 @@ export default function PayPage() {
 
       setPaymentStep('send');
 
-      const hash = await sendContract(
+      const hash = await sendGasless(
         token,
         USDCCloneAbi as any,
         'transferWithAuthorization',
@@ -117,8 +116,7 @@ export default function PayPage() {
           v,
           r,
           s,
-        ],
-        user as `0x${string}`
+        ]
       );
       setTxHash(hash);
       toast.success('Payment submitted', { description: hash });
