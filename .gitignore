@@ -117,3 +117,6 @@ cache/
 
 # Local Netlify folder
 .netlify
+# Local temp and archives
+tmp_frontend/
+*.zip
