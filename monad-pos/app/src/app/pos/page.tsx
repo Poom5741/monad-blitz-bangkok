@@ -147,7 +147,7 @@ export default function POSPage() {
               </div>
             ) : null}
             <h2 className="text-xl font-semibold mb-4 text-center">Enter Amount</h2>
-            <AmountDisplay amount={amountStr || '0'} symbol="USDC" />
+            <AmountDisplay value={amountStr} onChange={setAmountStr} symbol="USDC" />
             <div className="mt-4">
               <Keypad onInput={onInput} onClear={onClear} />
             </div>
