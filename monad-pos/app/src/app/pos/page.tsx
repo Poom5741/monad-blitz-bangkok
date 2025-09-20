@@ -127,6 +127,7 @@ export default function POSPage() {
   };
 
   const left = expiresAt ? Math.max(0, expiresAt - nowSec) : 0;
+  const shortHash = (h: string) => (h ? `${h.slice(0, 6)}…${h.slice(-4)}` : "");
 
   return (
     <div className="min-h-screen bg-background">
@@ -208,6 +209,9 @@ export default function POSPage() {
                     <Check className="w-3 h-3 text-white" />
                   </div>
                   <span className="text-green-500 font-semibold">Paid {formatAmount6(micros)} USDC</span>
+                  {paidTxHashView && (
+                    <code className="text-xs text-zinc-400 bg-zinc-800 border border-zinc-700 rounded px-2 py-0.5">{shortHash(paidTxHashView)}</code>
+                  )}
                 </>
               )}
             </div>
