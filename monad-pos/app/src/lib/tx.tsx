@@ -4,7 +4,7 @@ import { useSDK } from '@thirdweb-dev/react';
 import { ThirdwebSDK } from '@thirdweb-dev/sdk';
 import type { Abi } from 'viem';
 import { createWalletClient, custom, encodeFunctionData } from 'viem';
-import { monadTestnet } from '@/lib/chain';
+import { monadTestnet, viemMonadChain } from '@/lib/chain';
 
 export function useSendContract() {
   const sdk = useSDK();
@@ -34,7 +34,7 @@ export function useSendContract() {
     // Fallback to viem sendTransaction
     const data = encodeFunctionData({ abi, functionName: functionName as any, args: args as any });
     const wc = createWalletClient({ transport: custom((window as any).ethereum) });
-    const hash = await wc.sendTransaction({ to: contractAddress, account: from, data });
+    const hash = await wc.sendTransaction({ chain: viemMonadChain, to: contractAddress, account: from, data });
     return hash;
   };
 }
@@ -68,6 +68,6 @@ export async function sendGasless(
   const [from] = await (window as any).ethereum.request({ method: 'eth_requestAccounts' });
   const data = encodeFunctionData({ abi, functionName: functionName as any, args: args as any });
   const wc = createWalletClient({ transport: custom((window as any).ethereum) });
-  const hash = await wc.sendTransaction({ to: contractAddress, account: from as `0x${string}`, data });
+  const hash = await wc.sendTransaction({ chain: viemMonadChain, to: contractAddress, account: from as `0x${string}`, data });
   return hash;
 }

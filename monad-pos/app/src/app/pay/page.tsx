@@ -9,8 +9,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Wallet, Check, AlertTriangle, Clock, Copy, ArrowLeft, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { useAddress, ConnectWallet } from "@thirdweb-dev/react";
-import { getUsdcAddress } from "@/lib/chain";
+import { useAddress, useChainId, useNetworkMismatch, useSwitchChain, ConnectWallet } from "@thirdweb-dev/react";
+import { getUsdcAddress, monadTestnet } from "@/lib/chain";
 import { buildTransferWithAuthTypedData } from "@/lib/eip3009";
 import { randomNonceBytes32 } from "@/lib/hex";
 import { getAddress, isAddress } from "viem";
@@ -30,6 +30,9 @@ export default function PayPage() {
   const router = useRouter();
   const params = useSearchParams();
   const user = useAddress();
+  const activeChainId = useChainId();
+  const isMismatch = useNetworkMismatch();
+  const switchChain = useSwitchChain();
   const token = getUsdcAddress();
   const tokenCheck = useTokenConfigCheck();
 
@@ -78,6 +81,11 @@ export default function PayPage() {
 
   async function handlePay() {
     if (!user || !parsed.valid || expired) return;
+    // Enforce Monad Testnet only
+    if (activeChainId !== (monadTestnet as any).chainId) {
+      try { await (switchChain as any)?.((monadTestnet as any).chainId); } catch {}
+      return;
+    }
     try {
       setPaymentStep('authorize');
       const typed = buildTransferWithAuthTypedData({
@@ -215,12 +223,23 @@ export default function PayPage() {
                 <ConnectWallet theme="dark" btnTitle="Connect Wallet" modalTitle="Connect Wallet"/>
               ) : (
                 <div className="space-y-4">
+                  {activeChainId !== (monadTestnet as any).chainId && (
+                    <Alert className="rounded-2xl border-yellow-500/50 bg-yellow-500/10">
+                      <AlertTriangle className="h-4 w-4 text-yellow-500" />
+                      <AlertDescription className="text-yellow-500 flex items-center justify-between">
+                        Wrong network. Please switch to Monad Testnet.
+                        <Button size="sm" className="ml-3" onClick={() => (switchChain as any)?.((monadTestnet as any).chainId)}>
+                          Switch Network
+                        </Button>
+                      </AlertDescription>
+                    </Alert>
+                  )}
                   {paymentStep === 'connect' && (
                     <Button
                       size="lg"
                       className="w-full rounded-2xl shadow-lg h-14 text-lg"
                       onClick={handlePay}
-                      disabled={!!error}
+                      disabled={!!error || activeChainId !== (monadTestnet as any).chainId}
                     >
                       Pay {displayAmount} USDC
                     </Button>

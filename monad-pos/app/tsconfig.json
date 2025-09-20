@@ -9,7 +9,7 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "allowJs": false,
-    "jsx": "react-jsx",
+    "jsx": "preserve",
     "strict": true,
     "noEmit": true,
     "esModuleInterop": true,
@@ -18,23 +18,32 @@
     "baseUrl": ".",
     "paths": {
       "@/lib/*": [
-        "lib/*"
+        "src/lib/*"
       ],
       "@/hooks/*": [
-        "hooks/*"
+        "src/hooks/*"
       ],
       "@/components/*": [
-        "components/*"
+        "src/components/*"
       ],
       "@/*": [
         "src/*"
       ]
-    }
+    },
+    "skipLibCheck": true,
+    "incremental": true,
+    "isolatedModules": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ]
   },
   "include": [
     "next-env.d.ts",
     "src/**/*.ts",
-    "src/**/*.tsx"
+    "src/**/*.tsx",
+    ".next/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

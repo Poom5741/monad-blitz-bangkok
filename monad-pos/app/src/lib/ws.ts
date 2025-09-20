@@ -1,13 +1,8 @@
 import { createPublicClient, webSocket } from 'viem';
 
-function envString(name: string): string {
-  const v = process.env[name];
-  if (!v) throw new Error(`${name} is not set`);
-  return v;
-}
+const NEXT_PUBLIC_MONAD_RPC_WSS = process.env.NEXT_PUBLIC_MONAD_RPC_WSS || '';
+if (!NEXT_PUBLIC_MONAD_RPC_WSS) throw new Error('NEXT_PUBLIC_MONAD_RPC_WSS is not set');
 
 export function getWsClient() {
-  const wss = envString('NEXT_PUBLIC_MONAD_RPC_WSS');
-  return createPublicClient({ transport: webSocket(wss) });
+  return createPublicClient({ transport: webSocket(NEXT_PUBLIC_MONAD_RPC_WSS) });
 }
-

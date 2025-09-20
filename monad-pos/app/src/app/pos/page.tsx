@@ -6,9 +6,10 @@ import AmountDisplay, { parseAmount6, formatAmount6 } from "@/components/AmountD
 import Keypad from "@/components/Keypad";
 import QRCode from "react-qr-code";
 import { Check, Loader2 } from "lucide-react";
-import { useAddress, ConnectWallet } from "@thirdweb-dev/react";
+import { toast } from "sonner";
+import { useAddress, useChainId, useNetworkMismatch, useSwitchChain, ConnectWallet } from "@thirdweb-dev/react";
 import { usePaymentEvents } from "@/hooks/usePaymentEvents";
-import { getUsdcAddress } from "@/lib/chain";
+import { getUsdcAddress, monadTestnet } from "@/lib/chain";
 
 function mmss(unixLeft: number) {
   const m = Math.max(0, Math.floor(unixLeft / 60));
@@ -25,6 +26,9 @@ function genOrderId() {
 
 export default function POSPage() {
   const address = useAddress();
+  const activeChainId = useChainId();
+  const isMismatch = useNetworkMismatch();
+  const switchChain = useSwitchChain();
   const tokenAddress = getUsdcAddress();
 
   const [amountStr, setAmountStr] = useState("");
@@ -59,11 +63,16 @@ export default function POSPage() {
       setPaidTxHashView(paidTxHash);
       // increment total
       setTodayTotal((t) => t + micros);
-      // play sound + haptics
+      // Notification popup instead of sound
       if (!playedRef.current) {
         playedRef.current = true;
-        try { audioRef.current?.play().catch(() => {}); } catch {}
-        try { if (navigator.vibrate) navigator.vibrate([35, 60, 35]); } catch {}
+        try {
+          const tx = paidTxHash as string;
+          const short = tx ? `${tx.slice(0, 6)}…${tx.slice(-4)}` : '';
+          toast.success('Payment received', {
+            description: `${formatAmount6(micros)} USDC${short ? ` · ${short}` : ''}`,
+          });
+        } catch {}
       }
       // clear QR after 2s
       const to = setTimeout(() => {
@@ -101,7 +110,6 @@ export default function POSPage() {
   const handleCreateQr = () => {
     if (!address) return;
     if (micros <= 0n) return;
-    primeAudio();
     const oid = genOrderId();
     const exp = Math.floor(Date.now() / 1000) + 5 * 60;
     const url = `/pay?to=${address}&a=${micros.toString()}&exp=${exp}&oid=${oid}`;
@@ -146,7 +154,18 @@ export default function POSPage() {
               <div className="mb-4">
                 <ConnectWallet theme="dark" btnTitle="Connect Wallet" modalTitle="Connect Merchant Wallet"/>
               </div>
-            ) : null}
+            ) : (
+              activeChainId !== (monadTestnet as any).chainId ? (
+                <div className="mb-4">
+                  <div className="rounded-xl p-3 bg-yellow-500/10 border border-yellow-500/50 flex items-center justify-between">
+                    <span className="text-sm text-yellow-500">Wrong network. Switch to Monad Testnet.</span>
+                    <button className="px-3 py-1 rounded-lg bg-yellow-500 text-black text-sm" onClick={() => (switchChain as any)?.((monadTestnet as any).chainId)}>
+                      Switch
+                    </button>
+                  </div>
+                </div>
+              ) : null
+            )}
             <h2 className="text-xl font-semibold mb-4 text-center">Enter Amount</h2>
             <AmountDisplay value={amountStr} onChange={setAmountStr} symbol="USDC" />
             <div className="mt-4">
@@ -155,7 +174,7 @@ export default function POSPage() {
             <button
               className="mt-5 w-full rounded-2xl h-14 text-lg font-semibold bg-emerald-500 text-black active:bg-emerald-400 disabled:opacity-50"
               onClick={handleCreateQr}
-              disabled={!address || micros <= 0n}
+              disabled={!address || micros <= 0n || activeChainId !== (monadTestnet as any).chainId}
             >
               Create QR
             </button>

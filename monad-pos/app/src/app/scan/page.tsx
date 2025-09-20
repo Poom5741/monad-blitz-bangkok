@@ -13,6 +13,7 @@ export default function ScanPage() {
   const [hasPermission, setHasPermission] = useState<boolean | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const streamRef = useRef<MediaStream | null>(null)
   const router = useRouter()
 
   useEffect(() => {
@@ -24,19 +25,20 @@ export default function ScanPage() {
   const startCamera = async () => {
     try {
       setError(null)
+      if (!navigator?.mediaDevices?.getUserMedia) {
+        setError("Camera API not supported in this browser")
+        setHasPermission(false)
+        return
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment" },
       })
 
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        videoRef.current.play()
-        setIsScanning(true)
-        setHasPermission(true)
-
-        // Start QR detection
-        detectQRCode()
-      }
+      // Save stream, then render the <video /> by flipping isScanning.
+      streamRef.current = stream
+      setHasPermission(true)
+      setIsScanning(true)
     } catch (err) {
       console.error("Camera access denied:", err)
       setError("Camera access is required to scan QR codes")
@@ -45,39 +47,98 @@ export default function ScanPage() {
   }
 
   const stopCamera = () => {
-    if (videoRef.current?.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream
+    const current = (videoRef.current?.srcObject as MediaStream | null) || streamRef.current
+    if (current) {
+      const stream = current as MediaStream
       stream.getTracks().forEach((track) => track.stop())
       videoRef.current.srcObject = null
     }
     setIsScanning(false)
+    streamRef.current = null
   }
 
   const detectQRCode = () => {
-    // Simulate QR code detection for demo
-    // In a real app, you'd use a QR code detection library like jsQR
-    setTimeout(() => {
-      if (isScanning) {
-        // Simulate successful QR scan with payment data
-        const mockPaymentData = {
-          merchant: "Coffee Shop",
-          amount: "12.50",
-          orderId: "AB12",
-          expiry: Date.now() + 300000, // 5 minutes
+    let active = true
+    const hasBarcode = typeof window !== 'undefined' && 'BarcodeDetector' in window
+
+    if (!hasBarcode) {
+      setError("QR detection not supported. Use Chrome or install a QR library.")
+      return
+    }
+
+    // @ts-ignore - BarcodeDetector is a browser API
+    const detector = new window.BarcodeDetector({ formats: ['qr_code'] })
+
+    const loop = async () => {
+      if (!active || !isScanning || !videoRef.current) return
+      try {
+        // @ts-ignore - TS may not know detect accepts HTMLVideoElement
+        const codes = await detector.detect(videoRef.current)
+        if (codes && codes.length > 0) {
+          const raw = (codes[0] as any).rawValue || (codes[0] as any).raw || ''
+          if (raw) {
+            handleScannedText(String(raw))
+            active = false
+            return
+          }
         }
-
-        // Navigate to pay page with payment data
-        const params = new URLSearchParams({
-          merchant: mockPaymentData.merchant,
-          amount: mockPaymentData.amount,
-          orderId: mockPaymentData.orderId,
-          expiry: mockPaymentData.expiry.toString(),
-        })
-
-        router.push(`/pay?${params.toString()}`)
+      } catch (e) {
+        // swallow and continue
       }
-    }, 3000) // Simulate 3 second scan time
+      // throttle scan loop
+      setTimeout(() => requestAnimationFrame(loop), 150)
+    }
+
+    requestAnimationFrame(loop)
   }
+
+  const handleScannedText = (text: string) => {
+    stopCamera()
+    try {
+      let target = ''
+      const t = text.trim()
+      if (t.startsWith('/pay?')) {
+        target = t
+      } else if (t.includes('/pay?')) {
+        target = t.slice(t.indexOf('/pay?'))
+      } else {
+        // try parse absolute URL
+        const u = new URL(t, window.location.origin)
+        if (u.pathname === '/pay' && u.search) target = `/pay${u.search}`
+      }
+      if (!target) {
+        setError('Unsupported QR content')
+        return
+      }
+      router.push(target)
+    } catch {
+      setError('Failed to parse QR content')
+    }
+  }
+
+  // When scanning starts and video mounts, attach the stream and begin detection.
+  useEffect(() => {
+    const v = videoRef.current
+    const s = streamRef.current
+    if (!isScanning || !v || !s) return
+    try {
+      // Ensure iOS Safari autoplay
+      v.setAttribute('playsinline', 'true')
+      v.muted = true
+      // @ts-ignore - autoplay prop
+      v.autoplay = true
+      v.srcObject = s
+      const onLoaded = () => {
+        v.play().catch(() => {})
+        // kick off detection once frames flow
+        detectQRCode()
+      }
+      v.addEventListener('loadedmetadata', onLoaded, { once: true })
+      // If metadata already loaded, trigger immediately
+      if ((v as any).readyState >= 1) onLoaded()
+      return () => v.removeEventListener('loadedmetadata', onLoaded)
+    } catch {}
+  }, [isScanning])
 
   const handleManualEntry = () => {
     // For demo, navigate directly to pay page

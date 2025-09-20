@@ -9,34 +9,32 @@ export type TransferWithAuthParams = {
   validAfter: bigint | number | string;
   validBefore: bigint | number | string;
   nonce: Hex;
+  chainId?: number; // optional override for EIP-712 domain chainId
 };
 
-function envString(name: string): string {
-  const v = process.env[name];
-  if (!v) throw new Error(`${name} is not set`);
-  return v;
-}
+const NEXT_PUBLIC_TOKEN_NAME = process.env.NEXT_PUBLIC_TOKEN_NAME || '';
+const NEXT_PUBLIC_CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID || '');
+const NEXT_PUBLIC_USDC_ADDRESS = (process.env.NEXT_PUBLIC_USDC_ADDRESS || '') as Addr;
 
-function envNumber(name: string): number {
-  const v = Number(process.env[name] || '');
-  if (!v) throw new Error(`${name} is not set`);
-  return v;
-}
+if (!NEXT_PUBLIC_TOKEN_NAME) throw new Error('NEXT_PUBLIC_TOKEN_NAME is not set');
+if (!NEXT_PUBLIC_CHAIN_ID) throw new Error('NEXT_PUBLIC_CHAIN_ID is not set');
+if (!NEXT_PUBLIC_USDC_ADDRESS) throw new Error('NEXT_PUBLIC_USDC_ADDRESS is not set');
 
-function toBigIntish(x: bigint | number | string): bigint | string {
-  // EIP-712 can accept decimal strings or bigint; prefer bigint if safe
-  if (typeof x === 'bigint') return x;
-  if (typeof x === 'number') return BigInt(x);
-  // if string, let signer handle as decimal string
+function toBigIntish(x: bigint | number | string): string {
+  // For JSON.stringify safety, always return decimal strings for numeric values.
+  if (typeof x === 'bigint') return x.toString(10);
+  if (typeof x === 'number') return Math.trunc(x).toString(10);
+  // Already a string; assume decimal representation
   return x;
 }
 
 export function buildTransferWithAuthTypedData(params: TransferWithAuthParams) {
+  const domainChainId = params.chainId ?? NEXT_PUBLIC_CHAIN_ID;
   const domain = {
-    name: envString('NEXT_PUBLIC_TOKEN_NAME'),
+    name: NEXT_PUBLIC_TOKEN_NAME,
     version: '1',
-    chainId: envNumber('NEXT_PUBLIC_CHAIN_ID'),
-    verifyingContract: envString('NEXT_PUBLIC_USDC_ADDRESS') as Addr,
+    chainId: domainChainId,
+    verifyingContract: NEXT_PUBLIC_USDC_ADDRESS as Addr,
   } as const;
 
   const types = {
