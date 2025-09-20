@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Wallet, Check, AlertTriangle, Clock, Copy, ArrowLeft, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { useAddress, ConnectWallet } from "@thirdweb-dev/react";
 import { getUsdcAddress } from "@/lib/chain";
 import { buildTransferWithAuthTypedData } from "@/lib/eip3009";
@@ -120,13 +121,15 @@ export default function PayPage() {
         user as `0x${string}`
       );
       setTxHash(hash);
+      toast.success('Payment submitted', { description: hash });
       setPaymentStep('success');
     } catch (e: any) {
       if (e?.code === 4001) {
-        // user rejected
+        toast.info('Signature rejected by user');
         setPaymentStep('connect');
         return;
       }
+      toast.error(e?.message || 'Network error');
       setError('network');
       setPaymentStep('error');
     }
