@@ -59,10 +59,11 @@ export default function POSPage() {
       setPaidTxHashView(paidTxHash);
       // increment total
       setTodayTotal((t) => t + micros);
-      // play sound if available
+      // play sound + haptics
       if (!playedRef.current) {
         playedRef.current = true;
-        try { new Audio('/success.mp3').play().catch(() => {}); } catch {}
+        try { audioRef.current?.play().catch(() => {}); } catch {}
+        try { if (navigator.vibrate) navigator.vibrate([35, 60, 35]); } catch {}
       }
       // clear QR after 2s
       const to = setTimeout(() => {
@@ -100,6 +101,7 @@ export default function POSPage() {
   const handleCreateQr = () => {
     if (!address) return;
     if (micros <= 0n) return;
+    primeAudio();
     const oid = genOrderId();
     const exp = Math.floor(Date.now() / 1000) + 5 * 60;
     const url = `/pay?to=${address}&a=${micros.toString()}&exp=${exp}&oid=${oid}`;
