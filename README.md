@@ -28,8 +28,8 @@ monad-pos/
 - Deploy: `forge script script/Deploy.s.sol --rpc-url http://localhost:8545 --private-key <KEY> --broadcast`
 
 2) App
-- Copy env: `cp .env.example .env`
-- Set `NEXT_PUBLIC_RPC_URL`, `NEXT_PUBLIC_CHAIN_ID`, `NEXT_PUBLIC_USDCC_ADDRESS`
+- Copy env: `cp monad-pos/app/.env.example monad-pos/app/.env.local`
+- Set required vars: `NEXT_PUBLIC_MONAD_RPC_WSS`, `NEXT_PUBLIC_MONAD_RPC_HTTPS`, `NEXT_PUBLIC_CHAIN_ID`, `NEXT_PUBLIC_USDC_ADDRESS`, `NEXT_PUBLIC_TOKEN_NAME`, and optionally `NEXT_PUBLIC_THIRDWEB_CLIENT_ID`, `NEXT_PUBLIC_THIRDWEB_PAYMASTER_URL` for gasless.
 - Run: `npm run dev -w monad-pos/app` (Next.js dev server)
 
 ## Flows
@@ -37,5 +37,6 @@ monad-pos/
 - Pay (`/pay`): Parses QR, builds EIP‑712 for EIP‑3009, requests wallet signature, and calls `transferWithAuthorization` directly. For gasless, integrate thirdweb Smart Wallet + Paymaster.
 
 ## Notes
-- Token decimals: 6 (USDC‑style). Update `USDCClone.sol` if needed.
+- Token decimals: 6 (USDC‑style) via override in `USDCClone.sol`.
+- EIP‑712 domain name must match token constructor `name`. Set `NEXT_PUBLIC_TOKEN_NAME` equal to the exact `name` used when deploying `USDCClone`; mismatch will break signature verification and cause `transferWithAuthorization` to revert.
 - No server, no DB. Keep secrets out of the repo.

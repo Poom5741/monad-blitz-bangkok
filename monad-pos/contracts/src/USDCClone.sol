@@ -34,6 +34,11 @@ contract USDCClone is ERC20, Ownable, EIP712 {
         _mint(msg.sender, initialSupply * 10**decimals());
     }
 
+    /// @notice USDC-style 6 decimals
+    function decimals() public view override returns (uint8) {
+        return 6;
+    }
+
     /**
      * @notice Returns the state of an authorization
      * @param authorizer Authorizer's address
