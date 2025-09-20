@@ -67,3 +67,4 @@ export function buildTransferWithAuthTypedData(params: TransferWithAuthParams) {
   };
 }
 
+export { randomNonceBytes32 } from './hex';
